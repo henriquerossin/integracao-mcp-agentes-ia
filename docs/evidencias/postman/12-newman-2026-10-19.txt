@@ -1,0 +1,208 @@
+6.2.3
+(node:10221) [DEP0176] DeprecationWarning: fs.F_OK is deprecated, use fs.constants.F_OK instead
+(Use `node --trace-deprecation ...` to show where the warning was created)
+newman
+
+TCC - API de Tarefas (sem MCP)
+
+Folder 0 - Preparação (captura de IDs)
+Sub-folder 0.1 Capturar IDs dos membros
+  GET http://localhost:5081/api/membros [200 OK, 532B, 26ms]
+  Pass  Status 200
+  Pass  Membros do seed encontrados (João e Ana)
+
+Sub-folder 0.2 Capturar IDs de tarefas do seed
+  GET http://localhost:5081/api/tarefas [200 OK, 4.69kB, 53ms]
+  Pass  Status 200
+  Pass  Existe tarefa concluída e tarefa sem responsável
+
+Folder 1 - Consultas (queries)
+Sub-folder 1.1 Listar todas as tarefas
+  GET http://localhost:5081/api/tarefas [200 OK, 4.69kB, 6ms]
+  Pass  Status 200
+  Pass  Retorna uma lista não vazia
+  Pass  Cada tarefa tem os campos do DTO
+  Pass  Datas no horário de Brasília (-03:00) e prazo só com a data
+
+Sub-folder 1.2 Filtrar por status (EmAndamento)
+  GET http://localhost:5081/api/tarefas?status=EmAndamento [200 OK, 1.7kB, 14ms]
+  Pass  Status 200
+  Pass  Todas as tarefas estão EmAndamento
+
+Sub-folder 1.3 Filtrar por responsável (João)
+  GET http://localhost:5081/api/tarefas?responsavelId=60e0daff13824448bbaa52fbd5be421d [200 OK, 1.71kB, 7ms]
+  Pass  Status 200
+  Pass  Todas as tarefas são do João
+
+Sub-folder 1.4 Filtros combinados (João + AFazer)
+  GET http://localhost:5081/api/tarefas?responsavelId=60e0daff13824448bbaa52fbd5be421d&status=AFazer [200 OK, 928B, 5ms]
+  Pass  Status 200
+  Pass  Tarefas do João com status AFazer
+
+Sub-folder 1.5 Filtrar por prioridade (Alta)
+  GET http://localhost:5081/api/tarefas?prioridade=Alta [200 OK, 1.72kB, 6ms]
+  Pass  Status 200
+  Pass  Todas as tarefas têm prioridade Alta
+
+Sub-folder 1.6 Obter tarefa por ID
+  GET http://localhost:5081/api/tarefas/7d8353a526174a3aba08ce0a0d9bb7db [200 OK, 526B, 59ms]
+  Pass  Status 200
+  Pass  Retorna a tarefa pedida
+
+Sub-folder 1.7 Listar membros
+  GET http://localhost:5081/api/membros [200 OK, 532B, 4ms]
+  Pass  Status 200
+  Pass  Cada membro tem id, nome e e-mail
+  Pass  Nenhum membro expõe CPF ou senha
+
+Folder 2 - Comandos (commands)
+Sub-folder 2.1 Criar tarefa
+  POST http://localhost:5081/api/tarefas [201 Created, 626B, 47ms]
+  Pass  Status 201 Created
+  Pass  Cabeçalho Location aponta para a nova tarefa
+  Pass  Tarefa nasce AFazer, com os dados enviados
+
+Sub-folder 2.2 Iniciar tarefa (status EmAndamento)
+  PATCH http://localhost:5081/api/tarefas/fc9a161dce574ed999da0532e7d10fbd/status [200 OK, 544B, 16ms]
+  Pass  Status 200
+  Pass  Status alterado para EmAndamento
+  Pass  atualizadaEm é posterior a criadaEm
+
+Sub-folder 2.3 Atribuir responsável (Ana)
+  PATCH http://localhost:5081/api/tarefas/fc9a161dce574ed999da0532e7d10fbd/responsavel [200 OK, 540B, 13ms]
+  Pass  Status 200
+  Pass  Responsável passou a ser a Ana
+
+Sub-folder 2.4 Concluir tarefa (status Concluida)
+  PATCH http://localhost:5081/api/tarefas/fc9a161dce574ed999da0532e7d10fbd/status [200 OK, 538B, 4ms]
+  Pass  Status 200
+  Pass  Status alterado para Concluida
+
+Sub-folder 2.5 Cadastrar membro (não exposto ao agente)
+  POST http://localhost:5081/api/membros [201 Created, 319B, 161ms]
+  Pass  Status 201 Created
+  Pass  Membro criado com e-mail em minúsculas
+  Pass  Resposta não devolve CPF nem senha
+
+Sub-folder 2.6 Criar tarefa temporária (para excluir)
+  POST http://localhost:5081/api/tarefas [201 Created, 537B, 3ms]
+  Pass  Status 201 Created
+
+Sub-folder 2.7 Excluir tarefa (não exposto ao agente)
+  DELETE http://localhost:5081/api/tarefas/4c9ee6f1093a40028fddc85ca64bda1b [204 No Content, 81B, 18ms]
+  Pass  Status 204 No Content
+
+Sub-folder 2.8 Conferir exclusão (404)
+  GET http://localhost:5081/api/tarefas/4c9ee6f1093a40028fddc85ca64bda1b [404 Not Found, 224B, 6ms]
+  Pass  Status 404 Not Found
+  Pass  Mensagem de erro em português
+
+Folder 3 - Regras de negócio e validação
+Sub-folder 3.1 Reabrir tarefa concluída (422)
+  PATCH http://localhost:5081/api/tarefas/7d8353a526174a3aba08ce0a0d9bb7db/status [422 Unprocessable Entity, 236B, 4ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.2 Trocar responsável de tarefa concluída (422)
+  PATCH http://localhost:5081/api/tarefas/7d8353a526174a3aba08ce0a0d9bb7db/responsavel [422 Unprocessable Entity, 243B, 5ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.3 Concluir tarefa sem responsável (422)
+  PATCH http://localhost:5081/api/tarefas/0dfa6b52ec20401f9fe525a42ba6cc81/status [422 Unprocessable Entity, 237B, 3ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.4 Criar tarefa com prazo no passado (422)
+  POST http://localhost:5081/api/tarefas [422 Unprocessable Entity, 222B, 3ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.5 Criar tarefa com título acima de 120 caracteres (422)
+  POST http://localhost:5081/api/tarefas [422 Unprocessable Entity, 222B, 2ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.6 Alterar para o mesmo status (422)
+  PATCH http://localhost:5081/api/tarefas/0dfa6b52ec20401f9fe525a42ba6cc81/status [422 Unprocessable Entity, 216B, 5ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.7 Cadastrar membro com e-mail repetido (422)
+  POST http://localhost:5081/api/membros [422 Unprocessable Entity, 225B, 142ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.8 Cadastrar membro com e-mail inválido (422)
+  POST http://localhost:5081/api/membros [422 Unprocessable Entity, 203B, 2ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.9 Obter tarefa inexistente (404)
+  GET http://localhost:5081/api/tarefas/id-que-nao-existe [404 Not Found, 209B, 3ms]
+  Pass  Status 404
+  Pass  Mensagem em português
+
+Sub-folder 3.10 Atribuir membro inexistente (404)
+  PATCH http://localhost:5081/api/tarefas/0dfa6b52ec20401f9fe525a42ba6cc81/responsavel [404 Not Found, 213B, 4ms]
+  Pass  Status 404
+  Pass  Mensagem em português
+
+Sub-folder 3.11 Criar tarefa com prioridade inválida (400)
+  POST http://localhost:5081/api/tarefas [400 Bad Request, 578B, 20ms]
+  Pass  Status 400
+
+Sub-folder 3.12 Criar tarefa sem título (422)
+  POST http://localhost:5081/api/tarefas [422 Unprocessable Entity, 213B, 2ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.13 Cadastrar membro com CPF inválido (422)
+  POST http://localhost:5081/api/membros [422 Unprocessable Entity, 200B, 2ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.14 Cadastrar membro com CPF repetido (422)
+  POST http://localhost:5081/api/membros [422 Unprocessable Entity, 222B, 145ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Sub-folder 3.15 Cadastrar membro com senha curta (422)
+  POST http://localhost:5081/api/membros [422 Unprocessable Entity, 218B, 2ms]
+  Pass  Status 422
+  Pass  Mensagem explica a regra
+
+Folder 4 - Controle de acesso (X-Api-Key)
+Sub-folder 4.1 Sem chave de acesso (401)
+  GET http://localhost:5081/api/tarefas [401 Unauthorized, 206B, 2ms]
+  Pass  Status 401
+  Pass  Mensagem em português
+
+Sub-folder 4.2 Chave de acesso inválida (401)
+  GET http://localhost:5081/api/tarefas [401 Unauthorized, 206B, 2ms]
+  Pass  Status 401
+  Pass  Mensagem em português
+
+Sub-folder 4.3 Excluir sem chave de acesso (401)
+  DELETE http://localhost:5081/api/tarefas/0dfa6b52ec20401f9fe525a42ba6cc81 [401 Unauthorized, 206B, 2ms]
+  Pass  Status 401: nem operações destrutivas passam sem a chave
+
+------------------------------------------------------------------
+|                         |          executed |           failed |
+--------------------------+-------------------+-------------------
+|              iterations |                 1 |                0 |
+--------------------------+-------------------+-------------------
+|                requests |                35 |                0 |
+--------------------------+-------------------+-------------------
+|            test-scripts |                35 |                0 |
+--------------------------+-------------------+-------------------
+|      prerequest-scripts |                40 |                0 |
+--------------------------+-------------------+-------------------
+|              assertions |                72 |                0 |
+------------------------------------------------------------------
+| total run duration: 1467ms                                     |
+------------------------------------------------------------------
+| total data received: 19.09kB (approx)                          |
+------------------------------------------------------------------
+| average response time: 22ms [min: 2ms, max: 161ms, s.d.: 41ms] |
+------------------------------------------------------------------

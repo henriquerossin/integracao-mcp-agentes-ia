@@ -1,0 +1,25 @@
+@api = http://localhost:5080
+@chave = dev-chave-local-tcc
+
+### Listar membros
+GET {{api}}/api/membros
+X-Api-Key: {{chave}}
+
+### Listar tarefas em andamento
+GET {{api}}/api/tarefas?status=EmAndamento
+X-Api-Key: {{chave}}
+
+### Criar tarefa
+POST {{api}}/api/tarefas
+X-Api-Key: {{chave}}
+Content-Type: application/json
+
+{
+  "titulo": "Revisar proposta comercial",
+  "descricao": "Conferir valores antes do envio.",
+  "prioridade": "Alta",
+  "prazo": "2026-12-01"
+}
+
+### Sem chave (deve retornar 401)
+GET {{api}}/api/tarefas

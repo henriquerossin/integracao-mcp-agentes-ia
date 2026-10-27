@@ -1,0 +1,1129 @@
+{
+  "info": {
+    "_postman_id": "5f1c2a8e-3b7d-4c1e-9a6f-2d8b0e4c7a15",
+    "name": "TCC - API de Tarefas (sem MCP)",
+    "description": "Validação técnica da API REST do TCC antes da integração com o servidor MCP.\n\nOrdem de execução: rode as pastas de cima para baixo (ou a coleção inteira no Collection Runner). A pasta 0 captura os IDs gerados pelo seed e os guarda em variáveis da coleção, usadas pelas demais requisições.\n\nAntes de rodar, recrie o banco em um estado conhecido: `dotnet run -- --reset` em backend/src/Tarefas.Api.\n\nA chave de acesso (X-Api-Key) é enviada pela autenticação da coleção (aba Authorization). A pasta 4 desliga essa autenticação para demonstrar o 401.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "X-Api-Key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5080", "type": "string" },
+    { "key": "apiKey", "value": "dev-chave-local-tcc", "type": "string" },
+    { "key": "membroJoaoId", "value": "", "type": "string" },
+    { "key": "membroAnaId", "value": "", "type": "string" },
+    { "key": "tarefaConcluidaId", "value": "", "type": "string" },
+    { "key": "tarefaSemResponsavelId", "value": "", "type": "string" },
+    { "key": "tarefaCriadaId", "value": "", "type": "string" },
+    { "key": "tarefaTemporariaId", "value": "", "type": "string" },
+    { "key": "prazoFuturo", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Prazo futuro calculado no horário de Brasília (UTC-3): hoje + 7 dias, no formato AAAA-MM-DD.",
+          "const brasilia = new Date(Date.now() - 3 * 60 * 60 * 1000);",
+          "brasilia.setUTCDate(brasilia.getUTCDate() + 7);",
+          "pm.collectionVariables.set('prazoFuturo', brasilia.toISOString().substring(0, 10));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0 - Preparação (captura de IDs)",
+      "description": "Lê os dados criados pelo seed e guarda os IDs em variáveis da coleção. Rode esta pasta primeiro.",
+      "item": [
+        {
+          "name": "0.1 Capturar IDs dos membros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const membros = pm.response.json();",
+                  "const joao = membros.find(m => m.nome === 'João Pereira');",
+                  "const ana = membros.find(m => m.nome === 'Ana Souza');",
+                  "pm.test('Membros do seed encontrados (João e Ana)', () => {",
+                  "    pm.expect(joao, 'João Pereira').to.exist;",
+                  "    pm.expect(ana, 'Ana Souza').to.exist;",
+                  "});",
+                  "pm.collectionVariables.set('membroJoaoId', joao.id);",
+                  "pm.collectionVariables.set('membroAnaId', ana.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "0.2 Capturar IDs de tarefas do seed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const tarefas = pm.response.json();",
+                  "const concluida = tarefas.find(t => t.status === 'Concluida');",
+                  "const semResponsavel = tarefas.find(t => t.responsavelId === null && t.status !== 'Concluida');",
+                  "pm.test('Existe tarefa concluída e tarefa sem responsável', () => {",
+                  "    pm.expect(concluida, 'tarefa concluída').to.exist;",
+                  "    pm.expect(semResponsavel, 'tarefa sem responsável').to.exist;",
+                  "});",
+                  "pm.collectionVariables.set('tarefaConcluidaId', concluida.id);",
+                  "pm.collectionVariables.set('tarefaSemResponsavelId', semResponsavel.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Consultas (queries)",
+      "description": "Operações de leitura (lado Query do CQRS).",
+      "item": [
+        {
+          "name": "1.1 Listar todas as tarefas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const tarefas = pm.response.json();",
+                  "pm.test('Retorna uma lista não vazia', () => pm.expect(tarefas).to.be.an('array').that.is.not.empty);",
+                  "pm.test('Cada tarefa tem os campos do DTO', () => {",
+                  "    tarefas.forEach(t => pm.expect(t).to.include.all.keys('id', 'titulo', 'descricao', 'status', 'prioridade', 'responsavelId', 'responsavelNome', 'prazo', 'criadaEm', 'atualizadaEm'));",
+                  "});",
+                  "pm.test('Datas no horário de Brasília (-03:00) e prazo só com a data', () => {",
+                  "    const t = tarefas[0];",
+                  "    pm.expect(t.criadaEm).to.match(/-03:00$/);",
+                  "    pm.expect(t.prazo).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "1.2 Filtrar por status (EmAndamento)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Todas as tarefas estão EmAndamento', () => {",
+                  "    pm.response.json().forEach(t => pm.expect(t.status).to.eql('EmAndamento'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas?status=EmAndamento",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"],
+              "query": [{ "key": "status", "value": "EmAndamento" }]
+            }
+          }
+        },
+        {
+          "name": "1.3 Filtrar por responsável (João)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Todas as tarefas são do João', () => {",
+                  "    pm.response.json().forEach(t => pm.expect(t.responsavelNome).to.eql('João Pereira'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas?responsavelId={{membroJoaoId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"],
+              "query": [{ "key": "responsavelId", "value": "{{membroJoaoId}}" }]
+            }
+          }
+        },
+        {
+          "name": "1.4 Filtros combinados (João + AFazer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Tarefas do João com status AFazer', () => {",
+                  "    pm.response.json().forEach(t => {",
+                  "        pm.expect(t.responsavelNome).to.eql('João Pereira');",
+                  "        pm.expect(t.status).to.eql('AFazer');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas?responsavelId={{membroJoaoId}}&status=AFazer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"],
+              "query": [
+                { "key": "responsavelId", "value": "{{membroJoaoId}}" },
+                { "key": "status", "value": "AFazer" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "1.5 Filtrar por prioridade (Alta)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Todas as tarefas têm prioridade Alta', () => {",
+                  "    pm.response.json().forEach(t => pm.expect(t.prioridade).to.eql('Alta'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas?prioridade=Alta",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"],
+              "query": [{ "key": "prioridade", "value": "Alta" }]
+            }
+          }
+        },
+        {
+          "name": "1.6 Obter tarefa por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna a tarefa pedida', () => {",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('tarefaConcluidaId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaConcluidaId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaConcluidaId}}"]
+            }
+          }
+        },
+        {
+          "name": "1.7 Listar membros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Cada membro tem id, nome e e-mail', () => {",
+                  "    pm.response.json().forEach(m => pm.expect(m).to.have.all.keys('id', 'nome', 'email'));",
+                  "});",
+                  "pm.test('Nenhum membro expõe CPF ou senha', () => pm.expect(pm.response.text()).to.not.match(/cpf|senha|pbkdf2/i));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Comandos (commands)",
+      "description": "Operações de escrita (lado Command do CQRS), na ordem de um fluxo real: criar, iniciar, reatribuir e concluir uma tarefa. Inclui também as duas operações que existem na API mas NÃO serão expostas ao agente (excluir tarefa e cadastrar membro).",
+      "item": [
+        {
+          "name": "2.1 Criar tarefa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Cabeçalho Location aponta para a nova tarefa', () => pm.response.to.have.header('Location'));",
+                  "const t = pm.response.json();",
+                  "pm.test('Tarefa nasce AFazer, com os dados enviados', () => {",
+                  "    pm.expect(t.status).to.eql('AFazer');",
+                  "    pm.expect(t.prioridade).to.eql('Alta');",
+                  "    pm.expect(t.responsavelNome).to.eql('João Pereira');",
+                  "    pm.expect(t.prazo).to.eql(pm.collectionVariables.get('prazoFuturo'));",
+                  "});",
+                  "pm.collectionVariables.set('tarefaCriadaId', t.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Revisar o relatório financeiro\",\n  \"descricao\": \"Conferir os valores antes da reunião com a diretoria.\",\n  \"prioridade\": \"Alta\",\n  \"prazo\": \"{{prazoFuturo}}\",\n  \"responsavelId\": \"{{membroJoaoId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "2.2 Iniciar tarefa (status EmAndamento)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json();",
+                  "pm.test('Status alterado para EmAndamento', () => pm.expect(t.status).to.eql('EmAndamento'));",
+                  "pm.test('atualizadaEm é posterior a criadaEm', () => pm.expect(new Date(t.atualizadaEm).getTime()).to.be.above(new Date(t.criadaEm).getTime()));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"EmAndamento\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaCriadaId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaCriadaId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "2.3 Atribuir responsável (Ana)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Responsável passou a ser a Ana', () => pm.expect(pm.response.json().responsavelNome).to.eql('Ana Souza'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"membroId\": \"{{membroAnaId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaCriadaId}}/responsavel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaCriadaId}}", "responsavel"]
+            }
+          }
+        },
+        {
+          "name": "2.4 Concluir tarefa (status Concluida)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status alterado para Concluida', () => pm.expect(pm.response.json().status).to.eql('Concluida'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Concluida\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaCriadaId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaCriadaId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "2.5 Cadastrar membro (não exposto ao agente)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// E-mail e CPF únicos a cada execução, porque a API recusa e-mail e CPF repetidos.",
+                  "pm.variables.set('emailNovoMembro', `diego.alves.${Date.now()}@equipe.com`);",
+                  "// CPF aleatório com dígitos verificadores válidos (módulo 11).",
+                  "const d = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));",
+                  "for (const t of [10, 11]) { const r = d.reduce((s, x, i) => s + x * (t - i), 0) * 10 % 11; d.push(r === 10 ? 0 : r); }",
+                  "pm.variables.set('cpfNovoMembro', d.join(''));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Membro criado com e-mail em minúsculas', () => {",
+                  "    const m = pm.response.json();",
+                  "    pm.expect(m.nome).to.eql('Diego Alves');",
+                  "    pm.expect(m.email).to.eql(m.email.toLowerCase());",
+                  "});",
+                  "pm.test('Resposta não devolve CPF nem senha', () => pm.expect(pm.response.json()).to.have.all.keys('id', 'nome', 'email'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Diego Alves\",\n  \"email\": \"{{emailNovoMembro}}\",\n  \"cpf\": \"{{cpfNovoMembro}}\",\n  \"senha\": \"SenhaForte123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "2.6 Criar tarefa temporária (para excluir)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('tarefaTemporariaId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Tarefa temporária para teste de exclusão\",\n  \"prioridade\": \"Baixa\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "2.7 Excluir tarefa (não exposto ao agente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaTemporariaId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaTemporariaId}}"]
+            }
+          }
+        },
+        {
+          "name": "2.8 Conferir exclusão (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('Mensagem de erro em português', () => pm.expect(pm.response.json().erro).to.include('não encontrada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaTemporariaId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaTemporariaId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Regras de negócio e validação",
+      "description": "Pedidos que o sistema deve RECUSAR. Mostram que a integridade dos dados é garantida pelo backend, independentemente de quem chama a API (Postman hoje, servidor MCP depois).\n\n422 = regra de negócio violada (DomainException, mensagem em português).\n404 = recurso inexistente (NotFoundException).\n400 = corpo que nem chega ao domínio: o ASP.NET Core não consegue converter o JSON (ex.: valor fora do enum Prioridade) e responde com o ProblemDetails padrão.",
+      "item": [
+        {
+          "name": "3.1 Reabrir tarefa concluída (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Tarefas concluídas não podem ser reabertas nem alteradas.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AFazer\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaConcluidaId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaConcluidaId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "3.2 Trocar responsável de tarefa concluída (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Não é possível alterar o responsável de uma tarefa concluída.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"membroId\": \"{{membroAnaId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaConcluidaId}}/responsavel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaConcluidaId}}", "responsavel"]
+            }
+          }
+        },
+        {
+          "name": "3.3 Concluir tarefa sem responsável (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Uma tarefa só pode ser concluída se tiver um responsável.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Concluida\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaSemResponsavelId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaSemResponsavelId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "3.4 Criar tarefa com prazo no passado (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('O prazo da tarefa não pode estar no passado.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Tarefa com prazo vencido\",\n  \"prioridade\": \"Media\",\n  \"prazo\": \"2020-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "3.5 Criar tarefa com título acima de 120 caracteres (422)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('tituloLongo', 'A'.repeat(121));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('O título deve ter no máximo 120 caracteres.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"{{tituloLongo}}\",\n  \"prioridade\": \"Media\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "3.6 Alterar para o mesmo status (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('A tarefa já está com o status AFazer.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AFazer\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaSemResponsavelId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaSemResponsavelId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "3.7 Cadastrar membro com e-mail repetido (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Já existe um membro cadastrado com este e-mail.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Ana Souza\",\n  \"email\": \"ana.souza@equipe.com\",\n  \"cpf\": \"529.982.247-25\",\n  \"senha\": \"SenhaForte123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "3.8 Cadastrar membro com e-mail inválido (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Informe um e-mail válido.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Fulano\",\n  \"email\": \"email-sem-arroba\",\n  \"cpf\": \"529.982.247-25\",\n  \"senha\": \"SenhaForte123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "3.9 Obter tarefa inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Mensagem em português', () => pm.expect(pm.response.json().erro).to.eql(\"Tarefa 'id-que-nao-existe' não encontrada.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/id-que-nao-existe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "id-que-nao-existe"]
+            }
+          }
+        },
+        {
+          "name": "3.10 Atribuir membro inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Mensagem em português', () => pm.expect(pm.response.json().erro).to.eql(\"Membro 'membro-que-nao-existe' não encontrado.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"membroId\": \"membro-que-nao-existe\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaSemResponsavelId}}/responsavel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaSemResponsavelId}}", "responsavel"]
+            }
+          }
+        },
+        {
+          "name": "3.11 Criar tarefa com prioridade inválida (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Valor fora do enum Prioridade (Baixa | Media | Alta): o ASP.NET Core não consegue",
+                  "// converter o JSON e recusa com 400 antes de chegar ao domínio.",
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Tarefa com prioridade inventada\",\n  \"prioridade\": \"Urgentissima\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "3.12 Criar tarefa sem título (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('O título da tarefa é obrigatório.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"\",\n  \"prioridade\": \"Media\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "3.13 Cadastrar membro com CPF inválido (422)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('emailUnico', `teste.${Date.now()}@equipe.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Informe um CPF válido.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Fulano\",\n  \"email\": \"{{emailUnico}}\",\n  \"cpf\": \"123.456.789-00\",\n  \"senha\": \"SenhaForte123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "3.14 Cadastrar membro com CPF repetido (422)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('emailUnico', `teste.${Date.now()}@equipe.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('Já existe um membro cadastrado com este CPF.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Fulano\",\n  \"email\": \"{{emailUnico}}\",\n  \"cpf\": \"123.456.789-09\",\n  \"senha\": \"SenhaForte123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        },
+        {
+          "name": "3.15 Cadastrar membro com senha curta (422)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('emailUnico', `teste.${Date.now()}@equipe.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensagem explica a regra', () => pm.expect(pm.response.json().erro).to.eql('A senha deve ter no mínimo 8 caracteres.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Fulano\",\n  \"email\": \"{{emailUnico}}\",\n  \"cpf\": \"529.982.247-25\",\n  \"senha\": \"123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/membros",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "membros"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Controle de acesso (X-Api-Key)",
+      "description": "Esta pasta desliga a autenticação da coleção para mostrar que a API recusa chamadas sem a chave ou com chave errada (cenário 8 do TCC).",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "4.1 Sem chave de acesso (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Mensagem em português', () => pm.expect(pm.response.json().erro).to.eql('Chave de acesso ausente ou inválida.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "4.2 Chave de acesso inválida (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Mensagem em português', () => pm.expect(pm.response.json().erro).to.eql('Chave de acesso ausente ou inválida.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [{ "key": "X-Api-Key", "value": "chave-errada" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas"]
+            }
+          }
+        },
+        {
+          "name": "4.3 Excluir sem chave de acesso (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401: nem operações destrutivas passam sem a chave', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tarefas/{{tarefaSemResponsavelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tarefas", "{{tarefaSemResponsavelId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

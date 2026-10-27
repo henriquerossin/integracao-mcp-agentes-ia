@@ -1,0 +1,9 @@
+.env
+bin/
+obj/
+.vs/
+*.user
+.venv/
+__pycache__/
+mcp-server/logs/
+node_modules/

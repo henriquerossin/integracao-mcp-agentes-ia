@@ -1,0 +1,4 @@
+{"data_hora": "2026-10-26T20:07:31-03:00", "ferramenta": "listar_membros", "parametros": {}, "status": "sucesso", "detalhe": "4 registro(s) retornado(s)"}
+{"data_hora": "2026-10-26T20:07:38-03:00", "ferramenta": "listar_tarefas", "parametros": {"responsavel_id": "f1cff3d76af342558a8695453d976614"}, "status": "sucesso", "detalhe": "2 registro(s) retornado(s)"}
+{"data_hora": "2026-10-26T20:08:18-03:00", "ferramenta": "listar_membros", "parametros": {}, "status": "sucesso", "detalhe": "4 registro(s) retornado(s)"}
+{"data_hora": "2026-10-26T20:09:22-03:00", "ferramenta": "listar_tarefas", "parametros": {"responsavel_id": "f1cff3d76af342558a8695453d976614"}, "status": "sucesso", "detalhe": "2 registro(s) retornado(s)"}

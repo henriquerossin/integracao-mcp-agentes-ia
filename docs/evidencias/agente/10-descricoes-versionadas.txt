@@ -1,0 +1,32 @@
+Commit que versiona o servidor MCP:
+f0507474806ab0a8dc06db09ee1e41f7293ffc82  2026-10-04 22:39:59 -0300  feat: servidor MCP com auditoria, validação de IDs e evidências dos testes
+
+Descrições das ferramentas no commit f050747 (git show f050747:mcp-server/servidor.py):
+1:"""Servidor MCP do sistema de tarefas (transporte stdio).
+39:    """MCPServer com registro de auditoria em todas as chamadas de ferramentas.
+57:    """Resumo curto do retorno para o log (a resposta completa vai para o agente)."""
+73:async def listar_tarefas(
+74:    status: Annotated[Status | None, Field(description="Filtra pelo status: AFazer, EmAndamento ou Concluida.")] = None,
+75:    responsavel_id: Annotated[Id | None, Field(description="Filtra pelo ID do membro responsável (obtido em listar_membros).")] = None,
+76:    prioridade: Annotated[Prioridade | None, Field(description="Filtra pela prioridade: Baixa, Media ou Alta.")] = None,
+78:    """Lista as tarefas da equipe. Todos os filtros são opcionais e podem ser combinados."""
+86:async def obter_tarefa(
+87:    tarefa_id: Annotated[Id, Field(description="ID da tarefa.")],
+89:    """Obtém os detalhes de uma tarefa pelo seu ID."""
+94:async def listar_membros() -> list[dict]:
+95:    """Lista os membros da equipe, com ID, nome e e-mail. Use para descobrir o ID de uma pessoa pelo nome."""
+102:async def criar_tarefa(
+103:    titulo: Annotated[str, Field(description="Título da tarefa (obrigatório, até 120 caracteres).")],
+104:    prioridade: Annotated[Prioridade, Field(description="Prioridade: Baixa, Media ou Alta.")],
+105:    descricao: Annotated[str | None, Field(description="Descrição da tarefa.")] = None,
+106:    prazo: Annotated[date | None, Field(description="Prazo no formato AAAA-MM-DD. Não pode estar no passado.")] = None,
+107:    responsavel_id: Annotated[Id | None, Field(description="ID do membro responsável (obtido em listar_membros).")] = None,
+109:    """Cria uma nova tarefa com status AFazer."""
+123:async def atualizar_status_tarefa(
+124:    tarefa_id: Annotated[Id, Field(description="ID da tarefa.")],
+125:    status: Annotated[Status, Field(description="Novo status: AFazer, EmAndamento ou Concluida.")],
+127:    """Altera o status de uma tarefa. Uma tarefa concluída não pode ser reaberta nem alterada."""
+132:async def atribuir_responsavel(
+133:    tarefa_id: Annotated[Id, Field(description="ID da tarefa.")],
+134:    membro_id: Annotated[Id, Field(description="ID do membro que será o responsável (obtido em listar_membros).")],
+136:    """Define o membro responsável por uma tarefa."""
